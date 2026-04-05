@@ -250,7 +250,7 @@ Each line is a `StorageRecord`:
 
 ### GET /ws?token=API_KEY
 
-Live streaming of all collected data over WebSocket. Authenticates via the `token` query parameter.
+Live streaming of all collected data over WebSocket. Authenticates via the `token` query parameter. Records are buffered and flushed to the client every **100ms** to avoid overwhelming consumers.
 
 #### Connect
 
