@@ -174,11 +174,27 @@ async fn count_lines(path: &Path) -> std::io::Result<u64> {
     Ok(content.iter().filter(|&&b| b == b'\n').count() as u64)
 }
 
-/// GET /download?epoch=X&category=Y
+/// GET /snapshot — latest indicator + depth state in one call
+pub async fn snapshot(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let indicator = state.indicator_rx.borrow().clone();
+    let depth = state.depth_state_rx.borrow().clone();
+
+    Json(serde_json::json!({
+        "indicator": indicator,
+        "depth": depth,
+        "current_epoch": current_epoch(),
+    }))
+}
+
+/// GET /download?epoch=X&category=Y&from=T1&to=T2
 #[derive(Deserialize)]
 pub struct DownloadParams {
     pub epoch: Option<u64>,
     pub category: Option<String>,
+    /// Minimum timestamp (unix milliseconds, inclusive).
+    pub from: Option<i64>,
+    /// Maximum timestamp (unix milliseconds, inclusive).
+    pub to: Option<i64>,
 }
 
 pub async fn download(
@@ -210,12 +226,36 @@ pub async fn download(
         return Err(StatusCode::NOT_FOUND);
     }
 
-    // Concatenate all JSONL files into a single response
+    let need_filter = params.from.is_some() || params.to.is_some();
+    let from_ts = params.from.unwrap_or(i64::MIN);
+    let to_ts = params.to.unwrap_or(i64::MAX);
+
     let mut output = Vec::new();
     for path in &file_paths {
         if let Ok(content) = tokio::fs::read(path).await {
-            output.extend_from_slice(&content);
+            if need_filter {
+                // Parse each line and filter by timestamp
+                for line in content.split(|&b| b == b'\n') {
+                    if line.is_empty() {
+                        continue;
+                    }
+                    if let Ok(v) = serde_json::from_slice::<serde_json::Value>(line) {
+                        if let Some(ts) = v.get("ts").and_then(|t| t.as_i64()) {
+                            if ts >= from_ts && ts <= to_ts {
+                                output.extend_from_slice(line);
+                                output.push(b'\n');
+                            }
+                        }
+                    }
+                }
+            } else {
+                output.extend_from_slice(&content);
+            }
         }
+    }
+
+    if need_filter && output.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
     }
 
     Ok((

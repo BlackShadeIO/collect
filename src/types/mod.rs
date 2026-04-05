@@ -34,7 +34,7 @@ pub struct IndicatorSnapshot {
 }
 
 /// Aggregated depth state maintained by the depth collector.
-#[derive(Debug, Clone, Default)]
+#[derive(Serialize, Debug, Clone, Default)]
 pub struct DepthState {
     pub best_bid: f64,
     pub best_ask: f64,

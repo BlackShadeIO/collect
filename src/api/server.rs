@@ -9,7 +9,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::config::AppConfig;
 use crate::orchestrator::scheduler::OrchestratorState;
-use crate::types::{IndicatorSnapshot, StorageRecord};
+use crate::types::{DepthState, IndicatorSnapshot, StorageRecord};
 
 use super::auth::auth_middleware;
 use super::routes;
@@ -23,6 +23,7 @@ pub struct AppState {
     pub broadcast_tx: broadcast::Sender<StorageRecord>,
     pub orch_state_rx: watch::Receiver<OrchestratorState>,
     pub indicator_rx: watch::Receiver<IndicatorSnapshot>,
+    pub depth_state_rx: watch::Receiver<DepthState>,
 }
 
 pub fn build_app(state: AppState) -> Router {
@@ -33,6 +34,7 @@ pub fn build_app(state: AppState) -> Router {
         .route("/market", get(routes::list_markets))
         .route("/market/{epoch}", get(routes::get_market))
         .route("/download", get(routes::download))
+        .route("/snapshot", get(routes::snapshot))
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
     // Public routes + WS

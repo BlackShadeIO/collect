@@ -89,7 +89,7 @@ async fn main() -> Result<()> {
     // --- Spawn Calculation Engine ---
     let _calc_handle = spawn_calculation_engine(
         trade_rx,
-        depth_state_rx,
+        depth_state_rx.clone(),
         storage_tx.clone(),
         indicator_tx,
         broadcast_tx.clone(),
@@ -104,6 +104,7 @@ async fn main() -> Result<()> {
         broadcast_tx: broadcast_tx.clone(),
         orch_state_rx: orch_state_rx.clone(),
         indicator_rx: indicator_rx.clone(),
+        depth_state_rx: depth_state_rx.clone(),
     };
 
     let app = build_app(app_state);
