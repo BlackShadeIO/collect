@@ -1,6 +1,6 @@
 //! WebSocket streaming endpoint with subscription filters and backfill support.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use axum::{
@@ -56,16 +56,17 @@ async fn handle_ws(socket: WebSocket, state: AppState) {
 
     let mut flush_tick = tokio::time::interval(FLUSH_INTERVAL);
     flush_tick.tick().await; // consume first immediate tick
-    let mut buffer: Vec<StorageRecord> = Vec::new();
+    // Keep only the latest record per source
+    let mut latest: HashMap<String, StorageRecord> = HashMap::new();
 
     loop {
         tokio::select! {
-            // Collect broadcast messages into the buffer (no send yet)
+            // Overwrite with the latest record per source
             msg = broadcast_rx.recv() => {
                 match msg {
                     Ok(record) => {
                         if subscribed.contains(&record.source) {
-                            buffer.push(record);
+                            latest.insert(record.source.clone(), record);
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
@@ -75,16 +76,23 @@ async fn handle_ws(socket: WebSocket, state: AppState) {
                 }
             }
 
-            // Flush buffered records to the client every 100ms
+            // Send one combined message with latest data per source every 100ms
             _ = flush_tick.tick() => {
-                if buffer.is_empty() {
+                if latest.is_empty() {
                     continue;
                 }
-                for record in buffer.drain(..) {
-                    if let Ok(json) = serde_json::to_string(&record) {
-                        if sender.send(Message::Text(json.into())).await.is_err() {
-                            break;
-                        }
+                let mut msg = serde_json::Map::new();
+                let mut max_ts: i64 = 0;
+                for (source, record) in latest.drain() {
+                    if record.ts > max_ts {
+                        max_ts = record.ts;
+                    }
+                    msg.insert(source, record.data);
+                }
+                msg.insert("ts".to_string(), serde_json::Value::Number(max_ts.into()));
+                if let Ok(json) = serde_json::to_string(&msg) {
+                    if sender.send(Message::Text(json.into())).await.is_err() {
+                        break;
                     }
                 }
             }
