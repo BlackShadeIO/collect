@@ -1,6 +1,7 @@
 //! WebSocket streaming endpoint with subscription filters and backfill support.
 
 use std::collections::HashSet;
+use std::time::Duration;
 
 use axum::{
     extract::{Query, State, WebSocketUpgrade},
@@ -12,7 +13,11 @@ use serde::Deserialize;
 use tracing::{info, warn};
 
 use crate::api::server::AppState;
+use crate::types::StorageRecord;
 use crate::types::gamma::current_epoch;
+
+/// Interval at which buffered records are flushed to the client.
+const FLUSH_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Deserialize)]
 pub struct WsParams {
@@ -49,25 +54,38 @@ async fn handle_ws(socket: WebSocket, state: AppState) {
 
     info!("API WebSocket client connected");
 
+    let mut flush_tick = tokio::time::interval(FLUSH_INTERVAL);
+    flush_tick.tick().await; // consume first immediate tick
+    let mut buffer: Vec<StorageRecord> = Vec::new();
+
     loop {
         tokio::select! {
-            // Forward broadcast messages to client (filtered)
+            // Collect broadcast messages into the buffer (no send yet)
             msg = broadcast_rx.recv() => {
                 match msg {
                     Ok(record) => {
-                        if !subscribed.contains(&record.source) {
-                            continue;
-                        }
-                        if let Ok(json) = serde_json::to_string(&record) {
-                            if sender.send(Message::Text(json.into())).await.is_err() {
-                                break;
-                            }
+                        if subscribed.contains(&record.source) {
+                            buffer.push(record);
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         warn!(skipped = n, "API WS client lagged");
                     }
                     Err(_) => break,
+                }
+            }
+
+            // Flush buffered records to the client every 100ms
+            _ = flush_tick.tick() => {
+                if buffer.is_empty() {
+                    continue;
+                }
+                for record in buffer.drain(..) {
+                    if let Ok(json) = serde_json::to_string(&record) {
+                        if sender.send(Message::Text(json.into())).await.is_err() {
+                            break;
+                        }
+                    }
                 }
             }
 
