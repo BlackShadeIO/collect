@@ -62,7 +62,9 @@ async fn main() -> Result<()> {
     let (indicator_tx, indicator_rx) = watch::channel(IndicatorSnapshot {
         ts: 0, epoch: 0, btc_price: 0.0, strike: 0.0,
         ma_7s: 0.0, ma_25s: 0.0, ma_99s: 0.0,
-        rsi_14: 0.0, depth_imbalance: 0.0, mid_price: 0.0, best_bid: 0.0, best_ask: 0.0,
+        rsi_14: 0.0, volatility: 0.0,
+        fair_value_up: 0.5, fair_value_down: 0.5, tau: 0.0,
+        depth_imbalance: 0.0, mid_price: 0.0, best_bid: 0.0, best_ask: 0.0,
     });
     let (orch_state_tx, orch_state_rx) = watch::channel(OrchestratorState::default());
 

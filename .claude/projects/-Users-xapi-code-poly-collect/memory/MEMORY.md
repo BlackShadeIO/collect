@@ -1,0 +1,1 @@
+- [WS throttle](feedback_ws_throttle.md) — API WebSocket must flush at 100ms intervals, not per-record

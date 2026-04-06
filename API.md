@@ -73,6 +73,10 @@ curl -H "Authorization: Bearer $API_KEY" http://localhost:8080/status
     "ma_25s": 66824.31,
     "ma_99s": 66822.78,
     "rsi_14": 52.3,
+    "volatility": 0.0000133,
+    "fair_value_up": 0.62,
+    "fair_value_down": 0.38,
+    "tau": 187.5,
     "depth_imbalance": 0.034,
     "mid_price": 66826.585,
     "best_bid": 66826.58,
@@ -105,6 +109,10 @@ curl -H "Authorization: Bearer $API_KEY" http://localhost:8080/snapshot
     "ma_25s": 66824.31,
     "ma_99s": 66822.78,
     "rsi_14": 52.3,
+    "volatility": 0.0000133,
+    "fair_value_up": 0.62,
+    "fair_value_down": 0.38,
+    "tau": 187.5,
     "depth_imbalance": 0.034,
     "mid_price": 66826.585,
     "best_bid": 66826.58,
@@ -403,6 +411,10 @@ Every record from both the WebSocket stream and `/download` endpoint uses this w
   "ma_25s": 66824.31,
   "ma_99s": 66822.78,
   "rsi_14": 52.3,
+  "volatility": 0.0000133,
+  "fair_value_up": 0.62,
+  "fair_value_down": 0.38,
+  "tau": 187.5,
   "depth_imbalance": 0.034,
   "mid_price": 66826.585,
   "best_bid": 66826.58,
@@ -418,12 +430,23 @@ Every record from both the WebSocket stream and `/download` endpoint uses this w
 | `ma_25s` | 25-second simple moving average |
 | `ma_99s` | 99-second simple moving average |
 | `rsi_14` | 14-period Relative Strength Index (0-100) |
+| `volatility` | Realized volatility per √second (sliding 300s window of log returns) |
+| `fair_value_up` | GBM fair probability the UP token finishes in the money (0.00–1.00) |
+| `fair_value_down` | GBM fair probability the DOWN token finishes in the money (0.00–1.00) |
+| `tau` | Seconds remaining until market expiry |
 | `depth_imbalance` | `(bid_qty - ask_qty) / (bid_qty + ask_qty)`, range [-1, 1] |
 | `mid_price` | `(best_bid + best_ask) / 2` |
 | `best_bid` | Current best bid price |
 | `best_ask` | Current best ask price |
 
 Emitted at most once per second.
+
+**Fair value model:** Uses Black-Scholes Geometric Brownian Motion (GBM):
+```
+z = (ln(S/K) + (rf - 0.5σ²)τ) / (σ√τ)
+p_up = Φ(z)
+```
+Where `S` = spot (btc_price), `K` = strike, `τ` = tau (seconds remaining), `σ` = volatility (with floor at 0.165% annualized / √300), `rf` = 0.04 annual risk-free rate. Probabilities are clamped to [0.0001, 0.9999].
 
 ### Binance Trade (source: `binance_trade`)
 
@@ -686,11 +709,15 @@ interface CalculationData {
   ts: number;
   epoch: number;
   btc_price: number;
-  strike: number;       // First BTC price of this market epoch (price to beat)
-  ma_7s: number;        // 7-second simple moving average
-  ma_25s: number;       // 25-second simple moving average
-  ma_99s: number;       // 99-second simple moving average
+  strike: number;          // First BTC price of this market epoch (price to beat)
+  ma_7s: number;           // 7-second simple moving average
+  ma_25s: number;          // 25-second simple moving average
+  ma_99s: number;          // 99-second simple moving average
   rsi_14: number;
+  volatility: number;      // Realized vol per √second (300s window)
+  fair_value_up: number;   // GBM fair prob UP token (0.00–1.00)
+  fair_value_down: number; // GBM fair prob DOWN token (0.00–1.00)
+  tau: number;             // Seconds remaining until expiry
   depth_imbalance: number;
   mid_price: number;
   best_bid: number;

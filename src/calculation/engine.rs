@@ -1,6 +1,6 @@
 //! Technical indicator computation engine.
 //! Computes time-based moving averages (7s, 25s, 99s), RSI-14, strike price,
-//! and depth imbalance.
+//! realized volatility, and GBM fair value for UP/DOWN tokens.
 
 use std::collections::VecDeque;
 use std::time::Instant;
@@ -12,8 +12,10 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
+use crate::calculation::fair_value::{VolatilityCalculator, compute_fair_value};
 use crate::types::{DepthState, IndicatorSnapshot, StorageRecord};
 use crate::types::binance::BinanceTrade;
+use crate::types::gamma::seconds_remaining;
 
 /// A timestamped price sample for time-window moving averages.
 struct PriceSample {
@@ -72,9 +74,11 @@ pub fn spawn_calculation_engine(
         let mut ma_7s = TimeWindowMA::new(7);
         let mut ma_25s = TimeWindowMA::new(25);
         let mut ma_99s = TimeWindowMA::new(99);
+        let mut vol_calc = VolatilityCalculator::new();
 
         let mut last_emit = Instant::now();
         let mut last_price: f64 = 0.0;
+        let mut last_rsi: f64 = 0.0;
 
         // Strike tracking: first BTC price per epoch
         let mut current_epoch: u64 = 0;
@@ -99,6 +103,7 @@ pub fn spawn_calculation_engine(
 
                             let epoch = *epoch_rx.borrow();
                             let ts = chrono::Utc::now().timestamp_millis();
+                            let ts_s = ts as f64 / 1000.0;
 
                             // Detect epoch change → set strike to first price
                             if epoch != current_epoch && epoch > 0 {
@@ -108,12 +113,15 @@ pub fn spawn_calculation_engine(
                             }
 
                             last_price = price;
-                            let _ = rsi_14.next(price);
+                            last_rsi = rsi_14.next(price);
 
                             // Feed time-based MAs
                             ma_7s.push(ts, price);
                             ma_25s.push(ts, price);
                             ma_99s.push(ts, price);
+
+                            // Feed volatility calculator
+                            vol_calc.on_trade(price, ts_s);
 
                             // Emit snapshot at most once per second
                             if last_emit.elapsed().as_secs() >= 1 {
@@ -126,6 +134,15 @@ pub fn spawn_calculation_engine(
                                     0.0
                                 };
 
+                                // Compute fair value
+                                let tau = seconds_remaining(epoch) as f64;
+                                let (_mu, sigma) = vol_calc.drift_and_vol();
+                                let (fv_up, fv_down) = if strike > 0.0 {
+                                    compute_fair_value(last_price, strike, tau, sigma)
+                                } else {
+                                    (0.5, 0.5)
+                                };
+
                                 let snapshot = IndicatorSnapshot {
                                     ts,
                                     epoch,
@@ -134,7 +151,11 @@ pub fn spawn_calculation_engine(
                                     ma_7s: ma_7s.value(),
                                     ma_25s: ma_25s.value(),
                                     ma_99s: ma_99s.value(),
-                                    rsi_14: rsi_14.next(last_price),
+                                    rsi_14: last_rsi,
+                                    volatility: sigma,
+                                    fair_value_up: fv_up,
+                                    fair_value_down: fv_down,
+                                    tau,
                                     depth_imbalance,
                                     mid_price: depth.mid_price,
                                     best_bid: depth.best_bid,

@@ -32,6 +32,14 @@ pub struct IndicatorSnapshot {
     /// 99-second simple moving average.
     pub ma_99s: f64,
     pub rsi_14: f64,
+    /// Realized volatility per √second (sliding 300s window).
+    pub volatility: f64,
+    /// Fair probability the UP token finishes in the money.
+    pub fair_value_up: f64,
+    /// Fair probability the DOWN token finishes in the money.
+    pub fair_value_down: f64,
+    /// Seconds remaining until market expiry.
+    pub tau: f64,
     /// (total_bid_qty - total_ask_qty) / (total_bid_qty + total_ask_qty)
     pub depth_imbalance: f64,
     pub mid_price: f64,

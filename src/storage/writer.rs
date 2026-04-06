@@ -49,6 +49,7 @@ async fn writer_task(
     let mut files: HashMap<FileKey, OpenFile> = HashMap::new();
     let mut flush_interval = tokio::time::interval(std::time::Duration::from_secs(5));
     flush_interval.tick().await; // consume first tick
+    let mut flush_count: u64 = 0;
 
     loop {
         tokio::select! {
@@ -65,8 +66,22 @@ async fn writer_task(
 
             _ = flush_interval.tick() => {
                 flush_all(&mut files).await;
-                // Close files for epochs that haven't been written to recently
-                // (keeps file handles bounded)
+                flush_count += 1;
+                // Every 6th flush (~30s), close stale file handles for epochs
+                // that haven't been written to since the last eviction pass.
+                if flush_count % 6 == 0 {
+                    let stale: Vec<FileKey> = files
+                        .iter()
+                        .filter(|(_, f)| f.lines_since_flush == 0)
+                        .map(|(k, _)| FileKey { epoch: k.epoch, source: k.source.clone() })
+                        .collect();
+                    for key in stale {
+                        if let Some(mut f) = files.remove(&key) {
+                            let _ = f.writer.flush().await;
+                            info!(epoch = key.epoch, source = %key.source, "Closed stale file handle");
+                        }
+                    }
+                }
             }
 
             msg = rx.recv() => {
