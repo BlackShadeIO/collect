@@ -60,7 +60,8 @@ async fn main() -> Result<()> {
     let (epoch_tx, epoch_rx) = watch::channel::<u64>(current_epoch());
     let (depth_state_tx, depth_state_rx) = watch::channel(DepthState::default());
     let (indicator_tx, indicator_rx) = watch::channel(IndicatorSnapshot {
-        ts: 0, epoch: 0, btc_price: 0.0, ema_9: 0.0, ema_21: 0.0,
+        ts: 0, epoch: 0, btc_price: 0.0, strike: 0.0,
+        ma_7s: 0.0, ma_25s: 0.0, ma_99s: 0.0,
         rsi_14: 0.0, depth_imbalance: 0.0, mid_price: 0.0, best_bid: 0.0, best_ask: 0.0,
     });
     let (orch_state_tx, orch_state_rx) = watch::channel(OrchestratorState::default());

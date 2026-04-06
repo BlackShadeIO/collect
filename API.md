@@ -68,8 +68,10 @@ curl -H "Authorization: Bearer $API_KEY" http://localhost:8080/status
     "ts": 1775393813000,
     "epoch": 1775393700,
     "btc_price": 66826.59,
-    "ema_9": 66825.12,
-    "ema_21": 66824.87,
+    "strike": 66820.00,
+    "ma_7s": 66825.92,
+    "ma_25s": 66824.31,
+    "ma_99s": 66822.78,
     "rsi_14": 52.3,
     "depth_imbalance": 0.034,
     "mid_price": 66826.585,
@@ -98,8 +100,10 @@ curl -H "Authorization: Bearer $API_KEY" http://localhost:8080/snapshot
     "ts": 1775393813000,
     "epoch": 1775393700,
     "btc_price": 66826.59,
-    "ema_9": 66825.12,
-    "ema_21": 66824.87,
+    "strike": 66820.00,
+    "ma_7s": 66825.92,
+    "ma_25s": 66824.31,
+    "ma_99s": 66822.78,
     "rsi_14": 52.3,
     "depth_imbalance": 0.034,
     "mid_price": 66826.585,
@@ -282,7 +286,7 @@ The `source` field tells you the data type:
 | `binance_trade` | BTC/USDT trade executions |
 | `binance_depth` | Top-20 orderbook snapshots (100ms) |
 | `polymarket_clob` | Polymarket orderbook events |
-| `calculation` | Technical indicators (EMA, RSI, depth imbalance) |
+| `calculation` | Technical indicators (strike, MAs, RSI, depth imbalance) |
 
 #### Subscription Filtering
 
@@ -349,6 +353,20 @@ You can send backfill and subscription commands in the same message or as separa
 {"backfill": {"last_seconds": 120, "sources": ["calculation", "polymarket_clob"]}, "subscribe": ["calculation", "polymarket_clob"], "unsubscribe": ["binance_trade", "binance_depth"]}
 ```
 
+#### Keepalive / Ping-Pong
+
+The server uses **WebSocket-level ping/pong frames** to detect dead connections. The upstream connections use two heartbeat modes:
+
+| Connection | Heartbeat Mode | Details |
+|------------|---------------|---------|
+| **Binance** | Server-initiated | Binance sends WebSocket `Ping` frames; the server auto-replies with `Pong` |
+| **Polymarket** | Text `PING`/`PONG` | Server sends text `"PING"` every 10s, expects text `"PONG"` within 15s |
+| **API WebSocket** (`/ws`) | Standard WebSocket ping/pong | The Axum framework handles WebSocket-level ping/pong automatically. No application-level keepalive is required from the client |
+
+If a client needs to verify the connection is alive, it can send a standard WebSocket `Ping` frame — the server will respond with a `Pong` frame automatically.
+
+If the server detects a dead upstream connection (no pong within 15s), it reconnects with exponential backoff (1s initial, 30s max).
+
 ---
 
 ## Data Shapes
@@ -380,8 +398,10 @@ Every record from both the WebSocket stream and `/download` endpoint uses this w
   "ts": 1775393813000,
   "epoch": 1775393700,
   "btc_price": 66826.59,
-  "ema_9": 66825.12,
-  "ema_21": 66824.87,
+  "strike": 66820.00,
+  "ma_7s": 66825.92,
+  "ma_25s": 66824.31,
+  "ma_99s": 66822.78,
   "rsi_14": 52.3,
   "depth_imbalance": 0.034,
   "mid_price": 66826.585,
@@ -393,8 +413,10 @@ Every record from both the WebSocket stream and `/download` endpoint uses this w
 | Field | Description |
 |-------|-------------|
 | `btc_price` | Latest BTC/USDT trade price |
-| `ema_9` | 9-period Exponential Moving Average |
-| `ema_21` | 21-period Exponential Moving Average |
+| `strike` | First BTC trade price of this market epoch — the "price to beat". Polymarket users bet UP (above strike) or DOWN (below strike) |
+| `ma_7s` | 7-second simple moving average |
+| `ma_25s` | 25-second simple moving average |
+| `ma_99s` | 99-second simple moving average |
 | `rsi_14` | 14-period Relative Strength Index (0-100) |
 | `depth_imbalance` | `(bid_qty - ask_qty) / (bid_qty + ask_qty)`, range [-1, 1] |
 | `mid_price` | `(best_bid + best_ask) / 2` |
@@ -657,6 +679,22 @@ interface StorageRecord {
   source: DataSource;
   epoch: number;
   data: BinanceTrade | BinanceDepthSnapshot | PolymarketClob | CalculationData;
+}
+
+// Calculation data shape
+interface CalculationData {
+  ts: number;
+  epoch: number;
+  btc_price: number;
+  strike: number;       // First BTC price of this market epoch (price to beat)
+  ma_7s: number;        // 7-second simple moving average
+  ma_25s: number;       // 25-second simple moving average
+  ma_99s: number;       // 99-second simple moving average
+  rsi_14: number;
+  depth_imbalance: number;
+  mid_price: number;
+  best_bid: number;
+  best_ask: number;
 }
 
 // /snapshot response

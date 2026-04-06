@@ -23,8 +23,14 @@ pub struct IndicatorSnapshot {
     pub ts: i64,
     pub epoch: u64,
     pub btc_price: f64,
-    pub ema_9: f64,
-    pub ema_21: f64,
+    /// First BTC trade price of this market epoch (the price to beat).
+    pub strike: f64,
+    /// 7-second simple moving average.
+    pub ma_7s: f64,
+    /// 25-second simple moving average.
+    pub ma_25s: f64,
+    /// 99-second simple moving average.
+    pub ma_99s: f64,
     pub rsi_14: f64,
     /// (total_bid_qty - total_ask_qty) / (total_bid_qty + total_ask_qty)
     pub depth_imbalance: f64,
